@@ -3,31 +3,73 @@ import os
 import subprocess
 import sys
 import streamlit as st
-from retriever import retrieve
-from generator import generate_answer
 
 st.set_page_config(page_title="RAG Chatbot", layout="wide")
 
-db_path = "chroma_db"
-data_path = "data"
+DB_PATH = "chroma_db"
+DATA_PATH = "data"
 
-if (
-    os.path.isdir(data_path)
-    and any(f.lower().endswith(".pdf") for f in os.listdir(data_path))
-    and not os.path.exists(os.path.join(db_path, "chroma.sqlite3"))
-):
-    with st.spinner("Preparing your PDF knowledge base. This may take several minutes..."):
-        result = subprocess.run(
-            [sys.executable, "ingest.py"],
-            capture_output=True,
-            text=True,
-            timeout=900
-        )
 
-    if result.returncode != 0:
-        st.error("PDF ingestion failed. Check the error below.")
-        st.code((result.stdout + "\n" + result.stderr)[-3000:])
+def get_pdf_files():
+    if not os.path.isdir(DATA_PATH):
+        return []
+    return [
+        f for f in os.listdir(DATA_PATH)
+        if f.lower().endswith(".pdf")
+    ]
+
+
+def get_document_count():
+    if not os.path.exists(os.path.join(DB_PATH, "chroma.sqlite3")):
+        return 0
+
+    from langchain_chroma import Chroma
+    from langchain_community.embeddings import FastEmbedEmbeddings
+
+    db = Chroma(
+        persist_directory=DB_PATH,
+        embedding_function=FastEmbedEmbeddings()
+    )
+    return db._collection.count()
+
+
+pdf_files = get_pdf_files()
+
+if not pdf_files:
+    st.error("No PDF files found in the data/ folder.")
+    st.stop()
+
+try:
+    count = get_document_count()
+
+    if count == 0:
+        with st.spinner(
+            "Preparing your PDF knowledge base. This may take several minutes..."
+        ):
+            result = subprocess.run(
+                [sys.executable, "ingest.py"],
+                capture_output=True,
+                text=True,
+                timeout=900
+            )
+
+        if result.returncode != 0:
+            st.error("PDF ingestion failed.")
+            st.code((result.stdout + "\n" + result.stderr)[-4000:])
+            st.stop()
+
+        count = get_document_count()
+
+    st.caption(f"Knowledge base status: {count} document chunks indexed.")
+
+    if count == 0:
+        st.error("Ingestion completed, but the database contains no chunks.")
         st.stop()
+
+except Exception as e:
+    st.error(f"Knowledge base setup failed: {e}")
+    st.stop()
+
 
 from retriever import retrieve
 from generator import generate_answer
@@ -44,7 +86,9 @@ for msg in st.session_state.messages:
 query = st.chat_input("Ask something from your documents...")
 
 if query:
-    st.session_state.messages.append({"role": "user", "content": query})
+    st.session_state.messages.append(
+        {"role": "user", "content": query}
+    )
 
     with st.chat_message("user"):
         st.markdown(query)
@@ -52,17 +96,9 @@ if query:
     with st.spinner("Retrieving relevant chunks..."):
         docs = retrieve(query)
 
-    with st.spinner("Generating answer..."):
-        answer = generate_answer(query, docs)
-
-    st.session_state.messages.append({"role": "assistant", "content": answer})
-
-    with st.chat_message("assistant"):
-        st.markdown(answer)
-
-    with st.expander("Sources & Retrieved Chunks"):
+    with st.expander("Sources & Retrieved Chunks", expanded=True):
         if not docs:
-            st.info("No relevant document chunks were retrieved.")
+            st.warning("No relevant document chunks were retrieved.")
         else:
             for i, doc in enumerate(docs, start=1):
                 metadata = doc.metadata or {}
@@ -73,3 +109,13 @@ if query:
                 st.caption(f"Page: {page}")
                 st.write(doc.page_content[:500])
                 st.divider()
+
+    with st.spinner("Generating answer..."):
+        answer = generate_answer(query, docs)
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": answer}
+    )
+
+    with st.chat_message("assistant"):
+        st.markdown(answer)
