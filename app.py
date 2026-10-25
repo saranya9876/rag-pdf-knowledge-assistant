@@ -71,8 +71,13 @@ except Exception as e:
     st.stop()
 
 
-from retriever import retrieve
-from generator import generate_answer
+try:
+    from retriever import retrieve
+    from generator import generate_answer
+except Exception as e:
+    st.error("Failed to load the retrieval or generation modules.")
+    st.exception(e)
+    st.stop()
 
 st.title("RAG Chatbot (PDF Knowledge Assistant)")
 
