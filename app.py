@@ -1,9 +1,35 @@
 
+import os
+import subprocess
+import sys
 import streamlit as st
+
+st.set_page_config(page_title="RAG Chatbot", layout="wide")
+
+db_path = "chroma_db"
+data_path = "data"
+
+if (
+    os.path.isdir(data_path)
+    and any(f.lower().endswith(".pdf") for f in os.listdir(data_path))
+    and not os.path.exists(os.path.join(db_path, "chroma.sqlite3"))
+):
+    with st.spinner("Preparing your PDF knowledge base. This may take several minutes..."):
+        result = subprocess.run(
+            [sys.executable, "ingest.py"],
+            capture_output=True,
+            text=True,
+            timeout=900
+        )
+
+    if result.returncode != 0:
+        st.error("PDF ingestion failed. Check the error below.")
+        st.code((result.stdout + "\n" + result.stderr)[-3000:])
+        st.stop()
+
 from retriever import retrieve
 from generator import generate_answer
 
-st.set_page_config(page_title="RAG Chatbot", layout="wide")
 st.title("RAG Chatbot (PDF Knowledge Assistant)")
 
 if "messages" not in st.session_state:
