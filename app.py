@@ -3,6 +3,8 @@ import os
 import subprocess
 import sys
 import streamlit as st
+from retriever import retrieve
+from generator import generate_answer
 
 st.set_page_config(page_title="RAG Chatbot", layout="wide")
 
